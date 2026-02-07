@@ -134,3 +134,7 @@ dist
 /config
 /db
 *.sqlite
+
+# Nix
+result
+result-*

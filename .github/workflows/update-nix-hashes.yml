@@ -1,0 +1,91 @@
+name: Update Nix Hashes
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'package-lock.json'
+      - 'frontend/package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-nix-hashes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Update hashes
+        run: |
+          ./scripts/update-nix-hashes.sh
+
+      - name: Check for changes
+        id: check-changes
+        run: |
+          if git diff --quiet nix/package.nix; then
+            echo "No changes needed"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Pull Request
+        if: steps.check-changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: update npm dependency hashes'
+          title: 'chore: update npm dependency hashes'
+          body: |
+            ## Automated Nix Hash Update
+
+            This PR updates the npm dependency hashes in `nix/package.nix` to match the current `package-lock.json` files.
+
+            ### Changes
+            - Updated `npmDepsHash` for root package-lock.json
+            - Updated `hash` for frontend/package-lock.json
+
+            ### How to verify
+            If you have Nix installed, you can verify the build works:
+            ```bash
+            nix build .#voidauth
+            ```
+
+            Or simply merge if CI passes - this is an automated update and the hashes have been pre-calculated.
+
+            ### Trigger
+            This PR was automatically created because changes were detected in:
+            - `package-lock.json`
+            - `frontend/package-lock.json`
+          branch: automated/update-nix-hashes
+          delete-branch: true
+          labels: |
+            automated
+            nix
+            dependencies
+          draft: false
+
+      - name: Output result
+        run: |
+          if [ "${{ steps.check-changes.outputs.changed }}" == "true" ]; then
+            echo "✅ Pull request created successfully"
+          else
+            echo "✅ No changes needed - hashes are already up to date"
+          fi
