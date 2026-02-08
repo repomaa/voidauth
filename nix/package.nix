@@ -30,8 +30,7 @@ let
       let
         base = baseNameOf path;
       in
-      base != "node_modules"
-      && base != "dist"
+      base != "dist"
       && base != ".git"
       && base != "result"
       && base != ".devenv"
@@ -112,6 +111,7 @@ buildNpmPackage {
 
     cp dist/index.mjs $out/share/voidauth/
     cp -r migrations default_email_templates theme $out/share/voidauth/
+    cp -r node_modules $out/share/voidauth/
 
     mkdir -p $out/share/voidauth/frontend
     cp -r frontend/dist/browser/* $out/share/voidauth/frontend/

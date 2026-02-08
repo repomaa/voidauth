@@ -9,6 +9,7 @@ with lib;
 
 let
   cfg = config.services.voidauth;
+  dataDir = "/var/lib/voidauth";
 in
 {
   options.services.voidauth = {
@@ -19,12 +20,6 @@ in
       default = voidauthPackage;
       defaultText = literalExpression "voidauthPackage";
       description = "The VoidAuth package to use.";
-    };
-
-    dataDir = mkOption {
-      type = types.path;
-      default = "/var/lib/voidauth";
-      description = "Data directory for VoidAuth.";
     };
 
     settings = mkOption {
@@ -69,18 +64,23 @@ in
     users.users.voidauth = {
       isSystemUser = true;
       group = "voidauth";
-      home = cfg.dataDir;
-      createHome = true;
       description = "VoidAuth service user";
     };
 
     users.groups.voidauth = { };
 
-    systemd.tmpfiles.rules = [
-      "d '${cfg.dataDir}' 0750 voidauth voidauth -"
-      "d '${cfg.dataDir}/config' 0750 voidauth voidauth -"
-      "d '${cfg.dataDir}/db' 0750 voidauth voidauth -"
-    ];
+    # Create writable state directories
+    systemd.tmpfiles.rules =
+      lib.map (dir: "d ${dataDir}/${dir} 0755 voidauth voidauth -") [
+        "theme"
+        "config"
+        "config/email_templates"
+        "migrations"
+        "frontend"
+        "node_modules"
+        "default_email_templates"
+      ]
+      ++ lib.optional ((cfg.settings.DB_TYPE or "postgres") == "sqlite") "db";
 
     systemd.services.voidauth = {
       description = "VoidAuth - Single Sign-On Server";
@@ -89,11 +89,30 @@ in
       ];
       wantedBy = [ "multi-user.target" ];
 
+      preStart = ''
+        # Copy theme files on first start (custom.css is preserved)
+        if [ ! -f "${dataDir}/theme/custom.css" ]; then
+          cp -r ${cfg.package}/share/voidauth/theme/. "${dataDir}/theme/"
+          chmod -R 644 "${dataDir}/theme"/*
+        fi
+      '';
+
       serviceConfig = {
         Type = "simple";
         User = "voidauth";
         Group = "voidauth";
-        WorkingDirectory = cfg.dataDir;
+
+        # Use StateDirectory for automatic /var/lib/voidauth creation
+        StateDirectory = "voidauth";
+        WorkingDirectory = "%S/voidauth";
+
+        # Bind read-only directories from nix store
+        BindReadOnlyPaths = lib.map (dir: "${cfg.package}/share/voidauth/${dir}:${dataDir}/${dir}") [
+          "migrations"
+          "frontend"
+          "node_modules"
+          "default_email_templates"
+        ];
 
         EnvironmentFile = mkIf (cfg.environmentFile != null) cfg.environmentFile;
 
@@ -103,10 +122,7 @@ in
         PrivateTmp = true;
         ProtectSystem = "strict";
         ProtectHome = true;
-        ReadWritePaths = [
-          cfg.dataDir
-        ]
-        ++ lib.optional (cfg.settings ? DB_SOCKET_PATH) cfg.settings.DB_SOCKET_PATH;
+        ReadWritePaths = lib.optional (cfg.settings.DB_SOCKET_PATH != null) cfg.settings.DB_SOCKET_PATH;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
@@ -122,9 +138,13 @@ in
         Restart = "on-failure";
         RestartSec = 5;
 
-        Environment = mapAttrsToList (name: value: "${name}=${toString value}") (
-          filterAttrs (n: v: v != null) cfg.settings
-        );
+        Environment =
+          mapAttrsToList (name: value: "${name}=${toString value}") (
+            filterAttrs (n: v: v != null) cfg.settings
+          )
+          ++ [
+            "FRONTEND_PATH=${cfg.package}/share/voidauth/frontend"
+          ];
       };
     };
   };
