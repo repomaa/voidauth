@@ -103,7 +103,10 @@ in
         PrivateTmp = true;
         ProtectSystem = "strict";
         ProtectHome = true;
-        ReadWritePaths = [ cfg.dataDir ];
+        ReadWritePaths = [
+          cfg.dataDir
+        ]
+        ++ lib.optional (cfg.settings ? DB_SOCKET_PATH) cfg.settings.DB_SOCKET_PATH;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
