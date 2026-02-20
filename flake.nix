@@ -41,7 +41,7 @@
         }:
         import ./nix/module.nix {
           inherit config lib pkgs;
-          voidauthPackage = self.packages.${pkgs.system}.voidauth;
+          voidauthPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.voidauth;
         };
     };
 }
